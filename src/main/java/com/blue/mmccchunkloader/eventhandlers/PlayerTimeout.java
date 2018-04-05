@@ -34,10 +34,24 @@ public class PlayerTimeout {
                     if (System.currentTimeMillis() - loaderPos.loginTimeStamp >= timeout
                             && !isPlayerOnline(e.world, loaderPos.ownerId))
                     {
-                        
+                        System.out.println("Hello World");
                     }
                 }
             }
         }
+    }
+
+    public boolean isPlayerOnline(World world, String ownerId)
+    {
+        boolean ret = false;
+        for (EntityPlayer playerEntity : world.playerEntities)
+        {
+            if (playerEntity.getUniqueID().toString().equals(ownerId))
+            {
+                ret = false;
+                break;
+            }
+        }
+        return ret;
     }
 }
