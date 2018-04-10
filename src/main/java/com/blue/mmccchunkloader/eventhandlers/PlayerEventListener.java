@@ -1,6 +1,7 @@
 package com.blue.mmccchunkloader.eventhandlers;
 
 import com.blue.mmccchunkloader.MMCCChunkloader;
+import com.blue.mmccchunkloader.storage.ModConfiguration;
 import com.blue.mmccchunkloader.storage.PlayerLoadedChunks;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.WorldServer;
@@ -15,16 +16,14 @@ public class PlayerEventListener
     public void onPlayerLoggedInEvent(PlayerEvent.PlayerLoggedInEvent e)
     {
         System.out.println("Player logged in!");
-        PlayerLoadedChunks chunkLoads = MMCCChunkloader.playerChunkLoads.get(e.player.getUniqueID());
-        if (chunkLoads != null) {
-            WorldServer worldServer = DimensionManager.getWorld(chunkLoads.getDimension());
-            if (worldServer != null) {
-                System.out.println("Loading player chunks!");
-                for (ChunkPos chunkPos : chunkLoads.loadedChunks) {
-                    worldServer.getChunkProvider().loadChunk(chunkPos.x, chunkPos.z);
-                }
-            }else{
-                System.out.println("ERROR LOADING CHUNK, WORLD WAS NULL");
+
+        //Loads chunks for player, and if a timeout is in progress for them it is removed
+        MMCCChunkloader.loadPlayerChunks(e.player.getUniqueID());
+        for (int i=0; i<WorldTickListener.playerTimeouts.size(); i++) {
+            PlayerTimeout timeout = WorldTickListener.playerTimeouts.get(i);
+            if (timeout.getPlayerUUID().equals(e.player.getUniqueID())) {
+                WorldTickListener.playerTimeouts.remove(i);
+                break;
             }
         }
     }
@@ -33,18 +32,10 @@ public class PlayerEventListener
     public void onPlayerLoggedOutEvent(PlayerEvent.PlayerLoggedOutEvent e)
     {
         System.out.println("Player logged out!");
-        PlayerLoadedChunks chunkLoads = MMCCChunkloader.playerChunkLoads.get(e.player.getUniqueID());
-        if (chunkLoads != null) {
-            WorldServer worldServer = DimensionManager.getWorld(chunkLoads.getDimension());
-            if (worldServer != null) {
-                System.out.println("Unloading player chunks!");
-                for (ChunkPos chunkPos : chunkLoads.loadedChunks) {
-                    Chunk chunk = worldServer.getChunkFromChunkCoords(chunkPos.x, chunkPos.z);
-                    worldServer.getChunkProvider().queueUnload(chunk);
-                }
-            }else{
-                System.out.println("ERROR UNLOADING CHUNK, WORLD WAS NULL");
-            }
+
+        //If offline persistence is disabled, a timeout ticket is added to the tick listener for processing
+        if (!ModConfiguration.defaultPersistance) {
+            WorldTickListener.playerTimeouts.add(new PlayerTimeout(e.player.getUniqueID(), (ModConfiguration.persistanceTimeout * 1000)));
         }
     }
 }

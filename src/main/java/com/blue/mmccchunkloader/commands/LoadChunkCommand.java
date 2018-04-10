@@ -11,10 +11,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.world.DimensionType;
-import net.minecraft.world.World;
-import net.minecraftforge.common.DimensionManager;
-
-import java.util.UUID;
 
 public class LoadChunkCommand extends CommandBase {
     @Override
@@ -24,12 +20,19 @@ public class LoadChunkCommand extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return null;
+        return "Loads the chunk that the user is standing in.";
+    }
+
+    @Override
+    public int getRequiredPermissionLevel() {
+        return 0;
     }
 
     @Override
     public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
         if (sender instanceof EntityPlayer) {
+
+            //Performs a whitelist check to make sure loading chunks in this dimension is enabled
             DimensionType world = sender.getEntityWorld().provider.getDimensionType();
             String dimId = (world.getName() + world.getSuffix());
             if (!ModConfiguration.dimensionWhitelist.get(dimId)) {
@@ -38,9 +41,17 @@ public class LoadChunkCommand extends CommandBase {
                 return;
             }
 
-            PlayerLoadedChunks loadedChunks = MMCCChunkloader.playerChunkLoads.get(((EntityPlayer) sender).getUniqueID());
-            boolean creatingNew = false;
+            //Attempts to get the chunkload profile for the player in this dimension
+            PlayerLoadedChunks loadedChunks = null;
+            for (PlayerLoadedChunks playerLoadedChunks : MMCCChunkloader.playerChunkLoads) {
+                if ((playerLoadedChunks.getOwnerId().equals(((EntityPlayer) sender).getUniqueID())) && (playerLoadedChunks.getDimension() == ((EntityPlayer) sender).dimension)) {
+                    loadedChunks = playerLoadedChunks;
+                    break;
+                }
+            }
 
+            //If the attempt succeeds, a maximum chunkload check is performed.  If not, a new chunkload profile is created
+            boolean creatingNew = false;
             if (loadedChunks != null) {
                 if (!(loadedChunks.loadedChunks.size() < loadedChunks.maximumChunks)) {
                     TextComponentString textComponent = new TextComponentString(MMCCChunkloader.chatPrefix + "You have reached your maximum number of loaded chunks!");
@@ -52,22 +63,24 @@ public class LoadChunkCommand extends CommandBase {
                 creatingNew = true;
             }
 
+            //Retrieves the chunk position of the player, and checks if it is already loaded by someone else
             ChunkPos pos = sender.getEntityWorld().getChunkFromBlockCoords(sender.getPosition()).getPos();
-
-            UUID uuid = MMCCChunkloader.loadedChunks.get(pos);
-            if (uuid != null) {
-                String playername = server.getPlayerProfileCache().getProfileByUUID(uuid).getName();
-                TextComponentString alreadyLoaded = new TextComponentString(MMCCChunkloader.chatPrefix + "Chunk is already loaded by " + playername);
-                sender.sendMessage(alreadyLoaded);
-                return;
+            int currentDim = ((EntityPlayer) sender).dimension;
+            for (PlayerLoadedChunks loadCheck : MMCCChunkloader.playerChunkLoads) {
+                if (currentDim == loadCheck.getDimension()) {
+                    if (loadCheck.loadedChunks.contains(pos)) {
+                        String playername = server.getPlayerProfileCache().getProfileByUUID(loadCheck.getOwnerId()).getName();
+                        TextComponentString alreadyLoaded = new TextComponentString(MMCCChunkloader.chatPrefix + "Chunk is already loaded by " + playername);
+                        sender.sendMessage(alreadyLoaded);
+                        return;
+                    }
+                }
             }
 
-            UUID toSave = ((EntityPlayer) sender).getUniqueID();
+            //Adds the chunk position to the chunkload profile, and adds the profile to the main list if it was just created
             loadedChunks.loadedChunks.add(pos);
-            MMCCChunkloader.loadedChunks.put(pos, toSave);
-
             if (creatingNew) {
-                MMCCChunkloader.playerChunkLoads.put(toSave, loadedChunks);
+                MMCCChunkloader.playerChunkLoads.add(loadedChunks);
             }
 
             TextComponentString loaded = new TextComponentString(MMCCChunkloader.chatPrefix + "Current chunk will now be loaded.");

@@ -1,26 +1,26 @@
 package com.blue.mmccchunkloader;
 
 import com.blue.mmccchunkloader.commands.LoadChunkCommand;
+import com.blue.mmccchunkloader.commands.UnloadChunkCommand;
 import com.blue.mmccchunkloader.eventhandlers.PlayerEventListener;
 import com.blue.mmccchunkloader.eventhandlers.WorldTickListener;
 import com.blue.mmccchunkloader.storage.ModConfiguration;
 import com.blue.mmccchunkloader.storage.PlayerLoadedChunks;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.DimensionType;
-import net.minecraftforge.client.event.RenderGameOverlayEvent;
-import net.minecraftforge.client.event.RenderTooltipEvent;
+import net.minecraft.world.WorldServer;
+import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
-import net.minecraftforge.fml.common.event.FMLServerStartedEvent;
 import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 import net.minecraftforge.fml.common.network.NetworkCheckHandler;
 import net.minecraftforge.fml.relauncher.Side;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -34,9 +34,7 @@ public class MMCCChunkloader
     public static final String chatPrefix = "[Chunk-Loader] ";
     public static Configuration modConfiguration;
     //Used to store chunks loaded by each player per dimension
-    public static HashMap<UUID, PlayerLoadedChunks> playerChunkLoads = new HashMap<>();
-    //Used to quickly check for conflicts in chunk loads between two players
-    public static HashMap<ChunkPos, UUID> loadedChunks = new HashMap<>();
+    public static ArrayList<PlayerLoadedChunks> playerChunkLoads = new ArrayList<>();
 
     @Mod.Instance
     public static MMCCChunkloader instance;
@@ -58,14 +56,15 @@ public class MMCCChunkloader
 
     @Mod.EventHandler
     public void postInit(FMLPostInitializationEvent event) {
-
     }
 
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
+        WorldTickListener.cache = event.getServer().getPlayerProfileCache();
         handleDimensionWhitelist();
         modConfiguration.save();
         event.registerServerCommand(new LoadChunkCommand());
+        event.registerServerCommand(new UnloadChunkCommand());
     }
 
     public void loadConfiguration() {
@@ -86,6 +85,42 @@ public class MMCCChunkloader
             DimensionType type = DimensionManager.getProviderType(ids[i]);
             String newId = type.getName() + type.getSuffix();
             ModConfiguration.dimensionWhitelist.put(newId, modConfiguration.get("Dimension_Whitelist", newId, ModConfiguration.defaultDimensionState).getBoolean());
+        }
+    }
+
+    public static void loadPlayerChunks(UUID playerId) {
+        for (PlayerLoadedChunks loadedChunks : MMCCChunkloader.playerChunkLoads) {
+            if ((loadedChunks != null) && (loadedChunks.getOwnerId().equals(playerId))) {
+                WorldServer worldServer = DimensionManager.getWorld(loadedChunks.getDimension());
+                loadedChunks.shouldBeLoaded = true;
+                if (worldServer != null) {
+                    System.out.println("Loading player chunks!");
+                    for (ChunkPos chunkPos : loadedChunks.loadedChunks) {
+                        worldServer.getChunkProvider().loadChunk(chunkPos.x, chunkPos.z);
+                    }
+                }else{
+                    System.out.println("ERROR LOADING CHUNK, WORLD WAS NULL");
+                    loadedChunks.shouldBeLoaded = false;
+                }
+            }
+        }
+    }
+
+    public static void unloadPlayerChunks(UUID playerId) {
+        for (PlayerLoadedChunks loadedChunks : MMCCChunkloader.playerChunkLoads) {
+            if ((loadedChunks != null) && (loadedChunks.getOwnerId().equals(playerId))) {
+                WorldServer worldServer = DimensionManager.getWorld(loadedChunks.getDimension());
+                loadedChunks.shouldBeLoaded = false;
+                if (worldServer != null) {
+                    System.out.println("Unloading player chunks!");
+                    for (ChunkPos chunkPos : loadedChunks.loadedChunks) {
+                        Chunk chunk = worldServer.getChunkFromChunkCoords(chunkPos.x, chunkPos.z);
+                        worldServer.getChunkProvider().queueUnload(chunk);
+                    }
+                }else{
+                    System.out.println("ERROR UNLOADING CHUNK, WORLD WAS NULL");
+                }
+            }
         }
     }
 }

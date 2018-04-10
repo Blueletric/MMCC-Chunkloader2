@@ -11,6 +11,7 @@ public class PlayerLoadedChunks
     private int dimension;
     public int maximumChunks;
     public boolean persistence;
+    public boolean shouldBeLoaded;
     public int persistenceTimeout;
     public ArrayList<ChunkPos> loadedChunks;
 
@@ -22,6 +23,7 @@ public class PlayerLoadedChunks
         this.persistence = persistence;
         this.persistenceTimeout = persistenceTimeout;
         loadedChunks = new ArrayList<>();
+        shouldBeLoaded = true;
     }
 
     public UUID getOwnerId() {
