@@ -1,6 +1,7 @@
 package com.blue.mmccchunkloader;
 
 import com.blue.mmccchunkloader.commands.LoadChunkCommand;
+import com.blue.mmccchunkloader.commands.SaveChunksCommand;
 import com.blue.mmccchunkloader.commands.UnloadChunkCommand;
 import com.blue.mmccchunkloader.eventhandlers.PlayerEventListener;
 import com.blue.mmccchunkloader.eventhandlers.WorldTickListener;
@@ -19,9 +20,21 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 import net.minecraftforge.fml.common.network.NetworkCheckHandler;
 import net.minecraftforge.fml.relauncher.Side;
+import org.w3c.dom.*;
+import org.xml.sax.SAXException;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerConfigurationException;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -33,6 +46,9 @@ public class MMCCChunkloader
     public static final String MOD_VERSION = "0.0.1";
     public static final String chatPrefix = "[Chunk-Loader] ";
     public static Configuration modConfiguration;
+    public static DocumentBuilderFactory builderFactory = DocumentBuilderFactory.newInstance();
+    //The xml file holding chunk data
+    private static File chunkData;
     //Used to store chunks loaded by each player per dimension
     public static ArrayList<PlayerLoadedChunks> playerChunkLoads = new ArrayList<>();
 
@@ -47,6 +63,11 @@ public class MMCCChunkloader
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event)
     {
+        chunkData = new File(event.getModConfigurationDirectory(), "LoadedChunks.xml");
+        if (chunkData.exists()) {
+            loadChunksXml();
+        }
+
         modConfiguration = new Configuration(event.getSuggestedConfigurationFile());
         loadConfiguration();
         //Login/Logout tracking
@@ -65,6 +86,86 @@ public class MMCCChunkloader
         modConfiguration.save();
         event.registerServerCommand(new LoadChunkCommand());
         event.registerServerCommand(new UnloadChunkCommand());
+        event.registerServerCommand(new SaveChunksCommand());
+    }
+
+    public static void loadChunksXml() {
+        try {
+            DocumentBuilder builder = builderFactory.newDocumentBuilder();
+            Document document = builder.parse(chunkData);
+
+            Element root = document.getElementById("ChunkList");
+
+            for (int i=0; i<root.getChildNodes().getLength(); i++) {
+                Node node = root.getChildNodes().item(i);
+                if (node.getNodeName().equals("Chunk")) {
+                    System.out.println("Loading chunk entry");
+                    NamedNodeMap map = node.getAttributes();
+                    Node uuid = map.getNamedItem("uuid");
+                    if (uuid == null) {
+                        System.out.println("UUID was null, skipping entry");
+                        continue;
+                    }
+                    Node dimension = map.getNamedItem("dimension");
+                    if (dimension == null) {
+                        System.out.println("Dimension was null, skipping entry");
+                        continue;
+                    }
+                    PlayerLoadedChunks loadedProfile = new PlayerLoadedChunks(UUID.fromString(uuid.getNodeValue()), Integer.valueOf(dimension.getNodeValue()), ModConfiguration.defaultMax, ModConfiguration.defaultPersistance, ModConfiguration.persistanceTimeout);
+
+                    for (int j=0; j<node.getChildNodes().getLength(); j++) {
+                        Node chunk = node.getChildNodes().item(j);
+                        if (chunk != null) {
+                            NamedNodeMap attributes = chunk.getAttributes();
+                            Node xvalue = attributes.getNamedItem("xcoord");
+                            Node zvalue = attributes.getNamedItem("zcoord");
+                            if ((xvalue != null) && (zvalue != null)) {
+                                ChunkPos pos = new ChunkPos(Integer.valueOf(xvalue.getNodeValue()), Integer.valueOf(zvalue.getNodeValue()));
+                                loadedProfile.loadedChunks.add(pos);
+                            }
+                        }
+                    }
+                    playerChunkLoads.add(loadedProfile);
+                }
+            }
+
+        } catch (ParserConfigurationException | SAXException | IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void saveChunksXml() {
+        try {
+            DocumentBuilder builder = builderFactory.newDocumentBuilder();
+
+            Document document = builder.newDocument();
+
+            Element root = document.createElement("ChunkList");
+
+            for (PlayerLoadedChunks chunks : playerChunkLoads) {
+                Element element = document.createElement("Player");
+                element.setAttribute("uuid", chunks.getOwnerId().toString());
+                element.setAttribute("dimension", Integer.toString(chunks.getDimension()));
+
+                for (ChunkPos chunkPos : chunks.loadedChunks) {
+                    Element chunk = document.createElement("Chunk");
+                    chunk.setAttribute("xcoord", Integer.toString(chunkPos.x));
+                    chunk.setAttribute("zcoord", Integer.toString(chunkPos.z));
+                    element.appendChild(chunk);
+                }
+                root.appendChild(element);
+            }
+            document.appendChild(root);
+
+            if (!chunkData.exists()) chunkData.createNewFile();
+            TransformerFactory factory = TransformerFactory.newInstance();
+            Transformer transformer = factory.newTransformer();
+            DOMSource domSource = new DOMSource(document);
+            StreamResult result = new StreamResult(chunkData);
+            transformer.transform(domSource, result);
+        } catch (ParserConfigurationException | IOException | TransformerException e) {
+            e.printStackTrace();
+        }
     }
 
     public void loadConfiguration() {

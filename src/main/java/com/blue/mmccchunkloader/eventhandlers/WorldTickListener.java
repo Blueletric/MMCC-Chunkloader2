@@ -44,17 +44,12 @@ public class WorldTickListener {
         for (PlayerLoadedChunks chunks : MMCCChunkloader.playerChunkLoads) {
             if (chunks.shouldBeLoaded) {
                 WorldServer world = DimensionManager.getWorld(chunks.getDimension());
-                DimensionType type = world.provider.getDimensionType();
-                String name = cache.getProfileByUUID(chunks.getOwnerId()).getName();
-                int handledChunks = 0;
                 for (ChunkPos pos : chunks.loadedChunks) {
                     Chunk chunk = world.getChunkProvider().getLoadedChunk(pos.x, pos.z);
                     if ((chunk == null) || (!chunk.isLoaded())) {
                         world.getChunkProvider().loadChunk(pos.x, pos.z);
                     }
-                    handledChunks++;
                 }
-                System.out.println("Processed " + handledChunks + " in dim " + type.getName() + type.getSuffix() + chunks.getDimension() + " for player " + name);
             }
         }
 
